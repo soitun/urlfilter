@@ -4,10 +4,8 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/AdguardTeam/golibs/testutil"
 	"github.com/AdguardTeam/urlfilter/filterlist"
@@ -519,97 +517,6 @@ func assertMatchRuleText(t *testing.T, rulesText string, rules *DNSResult, ok bo
 	}
 }
 
-const (
-	networkFilterPath = testResourcesDir + "/adguard_sdn_filter.txt"
-	hostsPath         = testResourcesDir + "/hosts"
-)
-
-// TODO(a.garipov):  Consider removing and replacing with tests similar to
-// [BenchmarkDNSEngine_heapAlloc].
-func BenchmarkDNSEngine(b *testing.B) {
-	debug.SetGCPercent(10)
-
-	ruleStorage := newRuleStorage(b)
-	testutil.CleanupAndRequireSuccess(b, ruleStorage.Close)
-
-	testHostnames := loadHostnames(b)
-
-	startHeap, startRSS := alloc(b)
-	b.Logf(
-		"Allocated before loading rules (heap/RSS, kiB): %d/%d",
-		startHeap,
-		startRSS,
-	)
-
-	startParse := time.Now()
-	dnsEngine := NewDNSEngine(ruleStorage)
-	assert.NotNil(b, dnsEngine)
-
-	b.Logf("Elapsed on parsing rules: %v", time.Since(startParse))
-	b.Logf("Rules count - %v", dnsEngine.RulesCount)
-
-	loadHeap, loadRSS := alloc(b)
-	b.Logf(
-		"Allocated after loading rules (heap/RSS, kiB): %d/%d (%d/%d diff)",
-		loadHeap,
-		loadRSS,
-		loadHeap-startHeap,
-		loadRSS-startRSS,
-	)
-
-	totalMatches := 0
-	totalElapsed := time.Duration(0)
-	minElapsedMatch := time.Hour
-	minElapsedHostname := ""
-	maxElapsedMatch := time.Duration(0)
-	maxElapsedHostname := ""
-
-	for i, reqHostname := range testHostnames {
-		if i != 0 && i%10000 == 0 {
-			b.Logf("Processed %d requests", i)
-		}
-
-		startMatch := time.Now()
-		res, found := dnsEngine.Match(reqHostname)
-		elapsedMatch := time.Since(startMatch)
-		totalElapsed += elapsedMatch
-		if elapsedMatch > maxElapsedMatch {
-			maxElapsedMatch = elapsedMatch
-			maxElapsedHostname = reqHostname
-		}
-		if elapsedMatch < minElapsedMatch {
-			minElapsedMatch = elapsedMatch
-			minElapsedHostname = reqHostname
-		}
-
-		if found {
-			if res.NetworkRule != nil {
-				if !res.NetworkRule.Whitelist {
-					totalMatches++
-				}
-			} else if res.HostRulesV4 != nil || res.HostRulesV6 != nil {
-				totalMatches++
-			}
-		}
-	}
-
-	b.Logf("Total matches: %d", totalMatches)
-	b.Logf("Total elapsed: %v", totalElapsed)
-	b.Logf("Average per request: %v", time.Duration(int64(totalElapsed)/int64(len(testHostnames))))
-	b.Logf("Max per request: %v, on %s", maxElapsedMatch, maxElapsedHostname)
-	b.Logf("Min per request: %v, on %s", minElapsedMatch, minElapsedHostname)
-	b.Logf("Storage cache length: %d", ruleStorage.GetCacheSize())
-
-	matchHeap, matchRSS := alloc(b)
-	b.Logf(
-		"Allocated after matching (heap/RSS, kiB): %d/%d (%d/%d diff)",
-		matchHeap,
-		matchRSS,
-		matchHeap-loadHeap,
-		matchRSS-loadRSS,
-	)
-}
-
 // BenchmarkDNSEngine_heapAlloc is a benchmark used to measure changes in the
 // heap-allocated memory during typical operation of a DNS engine.  It reports
 // the following additional metrics:
@@ -635,9 +542,18 @@ func BenchmarkDNSEngine_heapAlloc(b *testing.B) {
 
 		b.ReportMetric(heapAlloc(b), "heap_after_loading_bytes")
 
+		req := &DNSRequest{}
+		res := &DNSResult{}
+
+		var ok bool
 		for _, reqHostname := range testHostnames {
-			_, _ = dnsEngine.Match(reqHostname)
+			req.Hostname = reqHostname
+			res.Reset()
+
+			ok = dnsEngine.MatchRequestInto(req, res)
 		}
+
+		require.True(b, ok)
 
 		b.ReportMetric(heapAlloc(b), "heap_after_matching_bytes")
 	}
@@ -647,8 +563,7 @@ func BenchmarkDNSEngine_heapAlloc(b *testing.B) {
 	//	goarch: amd64
 	//	pkg: github.com/AdguardTeam/urlfilter
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
-	//	BenchmarkDNSEngine_heapAlloc
-	//	BenchmarkDNSEngine_heapAlloc-16    	      50	 213679089 ns/op	  22254104 heap_after_loading_bytes	  25539224 heap_after_matching_bytes	  11264968 initial_heap_bytes	55783418 B/op	  918169 allocs/op
+	//	BenchmarkDNSEngine_heapAlloc-16    	      48	 229129641 ns/op	  24802672 heap_after_loading_bytes	  25683512 heap_after_matching_bytes	  11263960 initial_heap_bytes	54175552 B/op	  874416 allocs/op
 }
 
 // heapAlloc is a helper that returns the current heap-allocated bytes as
@@ -684,12 +599,43 @@ func BenchmarkDNSEngine_Match(b *testing.B) {
 	assert.True(b, match)
 
 	// Most recent results:
-	//
-	// goos: darwin
-	// goarch: arm64
-	// pkg: github.com/AdguardTeam/urlfilter
-	// cpu: Apple M1 Pro
-	// BenchmarkDNSEngine_Match-8   	      30	  39543044 ns/op	 3603043 B/op	   82078 allocs/op
+	//	goos: linux
+	//	goarch: amd64
+	//	pkg: github.com/AdguardTeam/urlfilter
+	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
+	//	BenchmarkDNSEngine_Match-16    	     207	  57062240 ns/op	 3237680 B/op	   69208 allocs/op
+}
+
+func BenchmarkDNSEngine_MatchRequestInto(b *testing.B) {
+	testHostnames := loadHostnames(b)
+
+	ruleStorage := newRuleStorage(b)
+	testutil.CleanupAndRequireSuccess(b, ruleStorage.Close)
+
+	dnsEngine := NewDNSEngine(ruleStorage)
+
+	var match bool
+	req := &DNSRequest{}
+	res := &DNSResult{}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, reqHostname := range testHostnames {
+			req.Hostname = reqHostname
+			res.Reset()
+
+			match = dnsEngine.MatchRequestInto(req, res)
+		}
+	}
+
+	assert.True(b, match)
+
+	// Most recent results:
+	//	goos: linux
+	//	goarch: amd64
+	//	pkg: github.com/AdguardTeam/urlfilter
+	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
+	//	BenchmarkDNSEngine_MatchRequestInto-16    	     240	  49861837 ns/op	  856973 B/op	   28219 allocs/op
 }
 
 func FuzzDNSEngine_Match(f *testing.F) {
@@ -747,6 +693,11 @@ func ruleListFromPath(tb testing.TB, path string, id int) (l *filterlist.StringR
 		IgnoreCosmetic: true,
 	}
 }
+
+const (
+	networkFilterPath = testResourcesDir + "/adguard_sdn_filter.txt"
+	hostsPath         = testResourcesDir + "/hosts"
+)
 
 // newRuleStorage returns new properly initialized rules storage with test data.
 func newRuleStorage(tb testing.TB) (ruleStorage *filterlist.RuleStorage) {

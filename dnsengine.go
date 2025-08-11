@@ -5,7 +5,6 @@ import (
 
 	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/urlfilter/filterlist"
-	"github.com/AdguardTeam/urlfilter/internal/fasthash"
 	"github.com/AdguardTeam/urlfilter/rules"
 )
 
@@ -14,10 +13,8 @@ import (
 // First, it looks over network rules and returns first rule found.
 // Then, if nothing found, it looks up the host rules.
 type DNSEngine struct {
-	// lookupTable is a map for hosts hashes mapped to the list of rule indexes.
-	//
-	// TODO(a.garipov):  Consider using the hostname as the map key.
-	lookupTable map[uint32][]int64
+	// ruleIndex is a map for hosts mapped to the list of rule indexes.
+	ruleIndex map[string][]int64
 
 	// networkEngine is a network rules engine constructed from the network
 	// rules.
@@ -54,6 +51,14 @@ type DNSResult struct {
 	NetworkRules []*rules.NetworkRule
 }
 
+// Reset makes res ready for reuse.
+func (res *DNSResult) Reset() {
+	res.NetworkRule = nil
+	res.HostRulesV4 = res.HostRulesV4[:0]
+	res.HostRulesV6 = res.HostRulesV6[:0]
+	res.NetworkRules = res.NetworkRules[:0]
+}
+
 // DNSRequest represents a DNS query with associated metadata.
 type DNSRequest struct {
 	// ClientIP is the IP address to match against $client modifiers.  The
@@ -79,11 +84,24 @@ type DNSRequest struct {
 	Answer bool
 }
 
-// NewDNSEngine parses the specified filter lists and returns a DNSEngine built from them.
-// key of the map is the filter list ID, value is the raw content of the filter list.
-func NewDNSEngine(s *filterlist.RuleStorage) *DNSEngine {
-	// At first, we count rules in the rule storage so that we could pre-allocate lookup tables
-	// Surprisingly, this helps us save a lot on allocations
+// Reset makes r ready for reuse.
+func (r *DNSRequest) Reset() {
+	r.ClientIP = netip.Addr{}
+
+	r.ClientName = ""
+	r.Hostname = ""
+
+	r.SortedClientTags = r.SortedClientTags[:0]
+
+	r.DNSType = 0
+
+	r.Answer = false
+}
+
+// NewDNSEngine parses the specified filter lists and returns a *DNSEngine built
+// from them.  s must not be nil.
+func NewDNSEngine(s *filterlist.RuleStorage) (d *DNSEngine) {
+	// Count rules in the rule storage to pre-allocate lookup tables.
 	var hostRulesCount, networkRulesCount int
 	scan := s.NewRuleStorageScanner()
 	for scan.Scan() {
@@ -96,20 +114,16 @@ func NewDNSEngine(s *filterlist.RuleStorage) *DNSEngine {
 		}
 	}
 
-	// Initialize the DNSEngine using these newly acquired numbers
-	d := DNSEngine{
+	d = &DNSEngine{
 		rulesStorage: s,
-		lookupTable:  make(map[uint32][]int64, hostRulesCount),
+		ruleIndex:    make(map[string][]int64, hostRulesCount),
 		RulesCount:   0,
-		reqPool: syncutil.NewPool(func() (v *rules.Request) {
-			return &rules.Request{}
-		}),
-		rulesPool: syncutil.NewSlicePool[*rules.HostRule](1),
+		reqPool:      syncutil.NewPool(func() (v *rules.Request) { return &rules.Request{} }),
+		rulesPool:    syncutil.NewSlicePool[*rules.HostRule](1),
 	}
 
 	networkEngine := NewNetworkEngineSkipStorageScan(s)
 
-	// Go through all rules in the storage and add them to the lookup tables
 	scanner := s.NewRuleStorageScanner()
 	for scanner.Scan() {
 		f, idx := scanner.Rule()
@@ -126,7 +140,7 @@ func NewDNSEngine(s *filterlist.RuleStorage) *DNSEngine {
 	d.RulesCount += networkEngine.RulesCount
 	d.networkEngine = networkEngine
 
-	return &d
+	return d
 }
 
 // Match finds a matching rule for the specified hostname.  It returns true and
@@ -158,83 +172,80 @@ func (d *DNSEngine) getRequestFromPool(dReq *DNSRequest) (req *rules.Request) {
 	return req
 }
 
-// MatchRequest matches the specified DNS request.  The return parameter matched
-// is true if the result has a basic network rule or some host rules.
+// MatchRequestInto matches the specified DNS request and puts the result into
+// res.  ok is true if the result has a basic network rule or some host rules.
+// req and res must not be nil.  res should be empty or reset using
+// [DNSResult.Reset].
 //
-// For compatibility reasons, it is also false when there are DNS rewrite and
-// other kinds of special network rules, so users who need those will need to
-// ignore the matched return parameter and instead inspect the results of the
+// NOTE:  For compatibility reasons, it is also false when there are DNS rewrite
+// and other kinds of special network rules, so users who need those will need
+// to ignore the matched return parameter and instead inspect the results of the
 // corresponding DNSResult getters.
 //
-// TODO(ameshkov): return nil when there's no match. Currently, the logic is
-// flawed because it analyzes the DNSResult even when matched is false and looks
-// for $dnsrewrite rules.
-func (d *DNSEngine) MatchRequest(dReq *DNSRequest) (res *DNSResult, matched bool) {
-	res = &DNSResult{}
-
-	if dReq.Hostname == "" {
-		return res, false
+// TODO(a.garipov):  Refactor the result and remove the exception above.
+func (d *DNSEngine) MatchRequestInto(req *DNSRequest, res *DNSResult) (matched bool) {
+	if req.Hostname == "" {
+		return false
 	}
 
-	r := d.getRequestFromPool(dReq)
+	r := d.getRequestFromPool(req)
 	defer d.reqPool.Put(r)
 
-	// TODO(a.garipov):  Add MatchRequestInto for *DNSResult reuse.
-	res.NetworkRules = d.networkEngine.AppendAllMatching(nil, r)
+	res.NetworkRules = d.networkEngine.AppendAllMatching(res.NetworkRules, r)
 	resultRule := rules.GetDNSBasicRule(res.NetworkRules)
 	if resultRule != nil {
-		// Network rules always have higher priority.
 		res.NetworkRule = resultRule
 
-		return res, true
+		return true
 	}
 
-	rr, ok := d.matchLookupTable(dReq.Hostname)
-	if !ok {
-		return res, false
+	hostRulesPtr := d.rulesPool.Get()
+	defer d.rulesPool.Put(hostRulesPtr)
+
+	*hostRulesPtr = d.appendFromIndex((*hostRulesPtr)[:0], req.Hostname)
+	if len(*hostRulesPtr) == 0 {
+		return false
 	}
 
-	for _, rule := range rr {
-		hostRule, idHostRule := rule.(*rules.HostRule)
-		if !idHostRule {
-			continue
-		}
-
-		if hostRule.IP.Is4() {
-			res.HostRulesV4 = append(res.HostRulesV4, hostRule)
+	for _, rule := range *hostRulesPtr {
+		if rule.IP.Is4() {
+			res.HostRulesV4 = append(res.HostRulesV4, rule)
 		} else {
-			res.HostRulesV6 = append(res.HostRulesV6, hostRule)
+			res.HostRulesV6 = append(res.HostRulesV6, rule)
 		}
 	}
 
-	return res, true
+	return true
 }
 
-// matchLookupTable looks for matching rules in the d.lookupTable
-func (d *DNSEngine) matchLookupTable(hostname string) ([]rules.Rule, bool) {
-	hash := fasthash.String(hostname)
-	rulesIndexes, ok := d.lookupTable[hash]
-	if !ok {
-		return nil, false
+// MatchRequest is like [MatchRequestInto] but returns a new result.  req must
+// not be nil.
+func (d *DNSEngine) MatchRequest(dReq *DNSRequest) (res *DNSResult, matched bool) {
+	res = &DNSResult{}
+	matched = d.MatchRequestInto(dReq, res)
+
+	return res, matched
+}
+
+// appendFromIndex appends matching rules to matching.
+func (d *DNSEngine) appendFromIndex(
+	matching []*rules.HostRule,
+	hostname string,
+) (res []*rules.HostRule) {
+	res = matching
+
+	indexes := d.ruleIndex[hostname]
+	for _, idx := range indexes {
+		res = append(res, d.rulesStorage.RetrieveHostRule(idx))
 	}
 
-	var matchingRules []rules.Rule
-	for _, idx := range rulesIndexes {
-		rule := d.rulesStorage.RetrieveHostRule(idx)
-		if rule != nil && rule.Match(hostname) {
-			matchingRules = append(matchingRules, rule)
-		}
-	}
-
-	return matchingRules, len(matchingRules) > 0
+	return res
 }
 
 // addRule adds rule to the index
 func (d *DNSEngine) addRule(hostRule *rules.HostRule, storageIdx int64) {
 	for _, hostname := range hostRule.Hostnames {
-		hash := fasthash.String(hostname)
-		rulesIndexes := d.lookupTable[hash]
-		d.lookupTable[hash] = append(rulesIndexes, storageIdx)
+		d.ruleIndex[hostname] = append(d.ruleIndex[hostname], storageIdx)
 	}
 
 	d.RulesCount++

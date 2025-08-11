@@ -116,6 +116,8 @@ func TestMatchSimplePattern(t *testing.T) {
 	assert.NotNil(t, rule)
 }
 
+// TODO(a.garipov):  Consider removing and replacing with tests similar to
+// [BenchmarkDNSEngine_heapAlloc].
 func TestBenchNetworkEngine(t *testing.T) {
 	debug.SetGCPercent(10)
 
