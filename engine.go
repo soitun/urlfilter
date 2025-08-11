@@ -25,10 +25,13 @@ func (e *Engine) MatchRequest(r *rules.Request) (res *rules.MatchingResult) {
 	var networkRules []*rules.NetworkRule
 	var sourceRules []*rules.NetworkRule
 
-	networkRules = e.networkEngine.MatchAll(r)
+	// TODO(a.garipov):  Use pools.
+	networkRules = e.networkEngine.AppendAllMatching(nil, r)
 	if r.SourceURL != "" {
 		sourceRequest := rules.NewRequest(r.SourceURL, "", rules.TypeDocument)
-		sourceRules = e.networkEngine.MatchAll(sourceRequest)
+
+		// TODO(a.garipov):  Use pools.
+		sourceRules = e.networkEngine.AppendAllMatching(nil, sourceRequest)
 	}
 
 	return rules.NewMatchingResult(networkRules, sourceRules)

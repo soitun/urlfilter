@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShortcutsTable_TryAdd(t *testing.T) {
+func TestShortcutsTable_Add(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -41,7 +41,7 @@ func TestShortcutsTable_TryAdd(t *testing.T) {
 	}
 }
 
-func TestShortcutsTable_MatchAll(t *testing.T) {
+func TestShortcutsTable_AppendMatching(t *testing.T) {
 	t.Parallel()
 
 	s := newStorage(t, testRuleTextAll)
@@ -72,18 +72,18 @@ func TestShortcutsTable_MatchAll(t *testing.T) {
 	}
 }
 
-func BenchmarkShortcutTable_MatchAll(b *testing.B) {
+func BenchmarkShortcutTable_AppendMatching(b *testing.B) {
 	s := newStorage(b, testRuleTextAll)
 	tbl := lookup.NewShortcutsTable(s)
 	loadTable(b, tbl, s)
 
 	r := rules.NewRequest(testURLStrWithDomain, testURLStrWithDomain, rules.TypeOther)
 
-	var gotRules []*rules.NetworkRule
+	gotRules := make([]*rules.NetworkRule, 0, 1)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		gotRules = tbl.MatchAll(r)
+		gotRules = tbl.AppendMatching(gotRules[:0], r)
 	}
 
 	require.Len(b, gotRules, 1)
@@ -93,21 +93,21 @@ func BenchmarkShortcutTable_MatchAll(b *testing.B) {
 	//	goarch: amd64
 	//	pkg: github.com/AdguardTeam/urlfilter/internal/lookup
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
-	//	BenchmarkShortcutTable_MatchAll-16    	34789922	      1061 ns/op	       8 B/op	       1 allocs/op
+	//	BenchmarkShortcutTable_AppendMatching-16    	10421620	      1085 ns/op	       0 B/op	       0 allocs/op
 }
 
-func BenchmarkShortcutTable_MatchAll_baseFilter(b *testing.B) {
+func BenchmarkShortcutTable_AppendMatching_baseFilter(b *testing.B) {
 	s := newStorage(b, string(baseFilterData))
 	tbl := lookup.NewShortcutsTable(s)
 	loadTable(b, tbl, s)
 
 	r := rules.NewRequest(testURLStrBaseFilterDomain, testURLStrBaseFilterDomain, rules.TypeOther)
 
-	var gotRules []*rules.NetworkRule
+	gotRules := make([]*rules.NetworkRule, 0, 1)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		gotRules = tbl.MatchAll(r)
+		gotRules = tbl.AppendMatching(gotRules[:0], r)
 	}
 
 	matched := false
@@ -122,5 +122,5 @@ func BenchmarkShortcutTable_MatchAll_baseFilter(b *testing.B) {
 	//	goarch: amd64
 	//	pkg: github.com/AdguardTeam/urlfilter/internal/lookup
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
-	//	BenchmarkShortcutTable_MatchAll_baseFilter-16    	  101490	     10900 ns/op	      57 B/op	       3 allocs/op
+	//	BenchmarkShortcutTable_AppendMatching_baseFilter-16    	 1000000	     10506 ns/op	       0 B/op	       0 allocs/op
 }

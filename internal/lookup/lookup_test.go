@@ -89,7 +89,7 @@ func assertMatch(
 ) {
 	tb.Helper()
 
-	gotRules := tbl.MatchAll(r)
+	gotRules := tbl.AppendMatching(nil, r)
 
 	if wantRuleText == "" {
 		assert.Empty(tb, gotRules)
@@ -118,7 +118,7 @@ func assertRuleIsAdded(
 		num++
 
 		r, idx := sc.Rule()
-		want(tb, tbl.TryAdd(r.(*rules.NetworkRule), idx))
+		want(tb, tbl.Add(r.(*rules.NetworkRule), idx))
 	}
 
 	assert.Equal(tb, 1, num)
@@ -132,7 +132,7 @@ func loadTable(tb testing.TB, tbl lookup.Table, s *filterlist.RuleStorage) {
 	for sc.Scan() {
 		r, idx := sc.Rule()
 		if nr, ok := r.(*rules.NetworkRule); ok {
-			_ = tbl.TryAdd(nr, idx)
+			_ = tbl.Add(nr, idx)
 		}
 	}
 }

@@ -4,13 +4,13 @@ package lookup
 
 import "github.com/AdguardTeam/urlfilter/rules"
 
-// Table is a common interface for all lookup tables.
+// Table is the interface for all lookup tables used to speed up matching.
 type Table interface {
-	// TryAdd attempts to add the rule to the lookup table.
-	// It returns true/false depending on whether the rule is eligible for
-	// this lookup table.
-	TryAdd(f *rules.NetworkRule, storageIdx int64) (ok bool)
+	// Add adds the rule to the lookup table.  If ok is false, the rule is not
+	// eligible for this lookup table and has not been added.
+	Add(f *rules.NetworkRule, storageIdx int64) (ok bool)
 
-	// MatchAll finds all matching rules from this lookup table.
-	MatchAll(r *rules.Request) (result []*rules.NetworkRule)
+	// AppendMatching finds all matching rules from this lookup table and
+	// appends them to matching.
+	AppendMatching(matching []*rules.NetworkRule, r *rules.Request) (res []*rules.NetworkRule)
 }

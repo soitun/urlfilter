@@ -648,7 +648,7 @@ func BenchmarkDNSEngine_heapAlloc(b *testing.B) {
 	//	pkg: github.com/AdguardTeam/urlfilter
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
 	//	BenchmarkDNSEngine_heapAlloc
-	//	BenchmarkDNSEngine_heapAlloc-16    	      49	 242786443 ns/op	  21317672 heap_after_loading_bytes	  24698744 heap_after_matching_bytes	  11290072 initial_heap_bytes	69773342 B/op	 1028856 allocs/op
+	//	BenchmarkDNSEngine_heapAlloc-16    	      50	 213679089 ns/op	  22254104 heap_after_loading_bytes	  25539224 heap_after_matching_bytes	  11264968 initial_heap_bytes	55783418 B/op	  918169 allocs/op
 }
 
 // heapAlloc is a helper that returns the current heap-allocated bytes as

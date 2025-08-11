@@ -3,89 +3,110 @@ package lookup
 import (
 	"strings"
 
+	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/urlfilter/filterlist"
-	"github.com/AdguardTeam/urlfilter/internal/fasthash"
 	"github.com/AdguardTeam/urlfilter/rules"
 )
 
-// DomainsTable is a lookup table that uses domains from the $domain modifier
-// to speed up the rules search.  Only the rules with $domain modifier are
-// eligible for this lookup table.
+// DomainsTable is a [Table] that uses domains from the $domain modifier to
+// speed up the rules search.  Only the rules with $domain modifier are eligible
+// for this lookup table.
 type DomainsTable struct {
 	// Storage for the network filtering rules.
 	ruleStorage *filterlist.RuleStorage
 
-	// Domain lookup table. Key is the domain name hash.
-	domainsLookupTable map[uint32][]int64
+	// subdomainsPool contains slices of strings to fill with subdomains.
+	subdomainsPool *syncutil.Pool[[]string]
+
+	// domainsIndex is the index of domains to rules that match them.
+	domainsIndex map[string][]int64
+}
+
+// subdomainsEst is the estimate for the number of subdomains in a domain.
+const subdomainsEst = 4
+
+// NewDomainsTable creates a new instance of the DomainsTable.
+func NewDomainsTable(rs *filterlist.RuleStorage) (s *DomainsTable) {
+	return &DomainsTable{
+		ruleStorage:    rs,
+		subdomainsPool: syncutil.NewSlicePool[string](subdomainsEst),
+		domainsIndex:   map[string][]int64{},
+	}
 }
 
 // type check
 var _ Table = (*DomainsTable)(nil)
 
-// NewDomainsTable creates a new instance of the DomainsTable.
-func NewDomainsTable(rs *filterlist.RuleStorage) (s *DomainsTable) {
-	return &DomainsTable{
-		ruleStorage:        rs,
-		domainsLookupTable: map[uint32][]int64{},
-	}
-}
-
-// TryAdd implements the LookupTable interface for *DomainsTable.
-func (d *DomainsTable) TryAdd(f *rules.NetworkRule, storageIdx int64) (ok bool) {
+// Add implements the [Table] interface for *DomainsTable.
+func (d *DomainsTable) Add(f *rules.NetworkRule, storageIdx int64) (ok bool) {
 	permittedDomains := f.GetPermittedDomains()
 	if len(permittedDomains) == 0 {
 		return false
 	}
 
 	for _, domain := range permittedDomains {
-		hash := fasthash.String(domain)
-
-		// Add the rule to the lookup table
-		rulesIndexes := d.domainsLookupTable[hash]
+		rulesIndexes := d.domainsIndex[domain]
 		rulesIndexes = append(rulesIndexes, storageIdx)
-		d.domainsLookupTable[hash] = rulesIndexes
+		d.domainsIndex[domain] = rulesIndexes
 	}
 
 	return true
 }
 
-// MatchAll implements the LookupTable interface for *DomainsTable.
-func (d *DomainsTable) MatchAll(r *rules.Request) (result []*rules.NetworkRule) {
+// AppendMatching implements the [Table] interface for *DomainsTable.
+func (d *DomainsTable) AppendMatching(
+	matching []*rules.NetworkRule,
+	r *rules.Request,
+) (res []*rules.NetworkRule) {
+	res = matching
 	if r.SourceHostname == "" {
-		return result
+		return res
 	}
 
-	domains := getSubdomains(r.SourceHostname)
-	for _, domain := range domains {
-		hash := fasthash.String(domain)
-		matchingRules, ok := d.domainsLookupTable[hash]
-		if !ok {
-			continue
-		}
+	subdomainsPtr := d.subdomainsPool.Get()
+	defer d.subdomainsPool.Put(subdomainsPtr)
 
-		for _, ruleIdx := range matchingRules {
-			rule := d.ruleStorage.RetrieveNetworkRule(ruleIdx)
+	*subdomainsPtr = appendSubdomains((*subdomainsPtr)[:0], r.SourceHostname)
+	if len(*subdomainsPtr) == 0 {
+		return res
+	}
+
+	for _, domain := range *subdomainsPtr {
+		matchingRules := d.domainsIndex[domain]
+		for _, idx := range matchingRules {
+			rule := d.ruleStorage.RetrieveNetworkRule(idx)
 			if rule != nil && rule.Match(r) {
-				result = append(result, rule)
+				res = append(res, rule)
 			}
 		}
 	}
-	return result
+
+	return res
 }
 
-// getSubdomains splits the specified hostname and returns all subdomains
-// (including the hostname itself).
-// TODO(ameshkov): consider doing this in rules.Request
-func getSubdomains(hostname string) (subdomains []string) {
-	parts := strings.Split(hostname, ".")
-	domain := ""
-	for i := len(parts) - 1; i >= 0; i-- {
-		if domain == "" {
-			domain = parts[i]
-		} else {
-			domain = parts[i] + "." + domain
-		}
-		subdomains = append(subdomains, domain)
+// appendSubdomains appends all subdomains of domain, starting from domain
+// itself, to sub.  domain must be a valid, non-fully-qualified domain name.
+// If domain is empty, appendSubdomains returns nil.
+//
+// NOTE:  Keep in sync with [netutil.Subdomains].
+//
+// TODO(a.garipov):  Add to golibs.
+func appendSubdomains(sub []string, domain string) (res []string) {
+	if domain == "" {
+		return nil
 	}
-	return subdomains
+
+	res = append(sub, domain)
+
+	for domain != "" {
+		i := strings.IndexByte(domain, '.')
+		if i < 0 {
+			break
+		}
+
+		domain = domain[i+1:]
+		res = append(res, domain)
+	}
+
+	return res
 }

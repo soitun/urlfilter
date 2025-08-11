@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDomainsTable_TryAdd(t *testing.T) {
+func TestDomainsTable_Add(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -37,7 +37,7 @@ func TestDomainsTable_TryAdd(t *testing.T) {
 	}
 }
 
-func TestDomainsTable_MatchAll(t *testing.T) {
+func TestDomainsTable_AppendMatching(t *testing.T) {
 	t.Parallel()
 
 	s := newStorage(t, testRuleTextAll)
@@ -81,18 +81,18 @@ func TestDomainsTable_MatchAll(t *testing.T) {
 	}
 }
 
-func BenchmarkDomainsTable_MatchAll(b *testing.B) {
+func BenchmarkDomainsTable_AppendMatching(b *testing.B) {
 	s := newStorage(b, testRuleTextAll)
 	tbl := lookup.NewDomainsTable(s)
 	loadTable(b, tbl, s)
 
 	r := rules.NewRequest(testURLStrWithSubdomain, testURLStrWithDomain, rules.TypeOther)
 
-	var gotRules []*rules.NetworkRule
+	gotRules := make([]*rules.NetworkRule, 0, 1)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		gotRules = tbl.MatchAll(r)
+		gotRules = tbl.AppendMatching(gotRules[:0], r)
 	}
 
 	require.Len(b, gotRules, 1)
@@ -102,21 +102,21 @@ func BenchmarkDomainsTable_MatchAll(b *testing.B) {
 	//	goarch: amd64
 	//	pkg: github.com/AdguardTeam/urlfilter/internal/lookup
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
-	//	BenchmarkDomainsTable_MatchAll-16     	22346624	      1668 ns/op	     104 B/op	       5 allocs/op
+	//	BenchmarkDomainsTable_AppendMatching-16     	 6777273	      1510 ns/op	       0 B/op	       0 allocs/op
 }
 
-func BenchmarkDomainsTable_MatchAll_baseFilter(b *testing.B) {
+func BenchmarkDomainsTable_AppendMatching_baseFilter(b *testing.B) {
 	s := newStorage(b, string(baseFilterData))
 	tbl := lookup.NewDomainsTable(s)
 	loadTable(b, tbl, s)
 
 	r := rules.NewRequest(testURLStrBaseFilterDomain, testURLStrBaseFilterDomain, rules.TypeOther)
 
-	var gotRules []*rules.NetworkRule
+	gotRules := make([]*rules.NetworkRule, 0, 1)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		gotRules = tbl.MatchAll(r)
+		gotRules = tbl.AppendMatching(gotRules[:0], r)
 	}
 
 	require.Len(b, gotRules, 1)
@@ -128,5 +128,5 @@ func BenchmarkDomainsTable_MatchAll_baseFilter(b *testing.B) {
 	//	goarch: amd64
 	//	pkg: github.com/AdguardTeam/urlfilter/internal/lookup
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
-	//	BenchmarkDomainsTable_MatchAll_baseFilter-16     	  537052	      2358 ns/op	     256 B/op	       8 allocs/op
+	//	BenchmarkDomainsTable_AppendMatching_baseFilter-16     	 5423517	      2105 ns/op	       0 B/op	       0 allocs/op
 }

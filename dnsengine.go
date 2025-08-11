@@ -15,6 +15,8 @@ import (
 // Then, if nothing found, it looks up the host rules.
 type DNSEngine struct {
 	// lookupTable is a map for hosts hashes mapped to the list of rule indexes.
+	//
+	// TODO(a.garipov):  Consider using the hostname as the map key.
 	lookupTable map[uint32][]int64
 
 	// networkEngine is a network rules engine constructed from the network
@@ -24,8 +26,11 @@ type DNSEngine struct {
 	// rulesStorage is the storage of all rules.
 	rulesStorage *filterlist.RuleStorage
 
-	// pool is the pool of [rules.Request] values.
-	pool *syncutil.Pool[rules.Request]
+	// reqPool is the pool of [rules.Request] values.
+	reqPool *syncutil.Pool[rules.Request]
+
+	// rulesPool contains slices of rules for reuse.
+	rulesPool *syncutil.Pool[[]*rules.HostRule]
 
 	// RulesCount is the count of rules loaded to the engine.
 	RulesCount int
@@ -96,9 +101,10 @@ func NewDNSEngine(s *filterlist.RuleStorage) *DNSEngine {
 		rulesStorage: s,
 		lookupTable:  make(map[uint32][]int64, hostRulesCount),
 		RulesCount:   0,
-		pool: syncutil.NewPool(func() (v *rules.Request) {
+		reqPool: syncutil.NewPool(func() (v *rules.Request) {
 			return &rules.Request{}
 		}),
+		rulesPool: syncutil.NewSlicePool[*rules.HostRule](1),
 	}
 
 	networkEngine := NewNetworkEngineSkipStorageScan(s)
@@ -136,7 +142,7 @@ func (d *DNSEngine) Match(hostname string) (res *DNSResult, matched bool) {
 // getRequestFromPool returns an instance of request from the engine's pool.
 // Fills it's properties to match the given DNS request.
 func (d *DNSEngine) getRequestFromPool(dReq *DNSRequest) (req *rules.Request) {
-	req = d.pool.Get()
+	req = d.reqPool.Get()
 
 	req.SourceDomain = ""
 	req.SourceHostname = ""
@@ -171,9 +177,10 @@ func (d *DNSEngine) MatchRequest(dReq *DNSRequest) (res *DNSResult, matched bool
 	}
 
 	r := d.getRequestFromPool(dReq)
-	defer d.pool.Put(r)
+	defer d.reqPool.Put(r)
 
-	res.NetworkRules = d.networkEngine.MatchAll(r)
+	// TODO(a.garipov):  Add MatchRequestInto for *DNSResult reuse.
+	res.NetworkRules = d.networkEngine.AppendAllMatching(nil, r)
 	resultRule := rules.GetDNSBasicRule(res.NetworkRules)
 	if resultRule != nil {
 		// Network rules always have higher priority.

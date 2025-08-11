@@ -2,179 +2,172 @@ package lookup
 
 import (
 	"math"
+	"slices"
 	"strings"
 
+	"github.com/AdguardTeam/golibs/syncutil"
 	"github.com/AdguardTeam/urlfilter/filterlist"
-	"github.com/AdguardTeam/urlfilter/internal/fasthash"
 	"github.com/AdguardTeam/urlfilter/rules"
 )
 
-const (
-	// shortcutLength is the fixed length used to form URL "shortcuts".
-	//
-	// NOTE:  Do not change this without updating [ShortcutsTable.MatchAll].
-	shortcutLength = 5
-)
+// shortcutLength is the fixed length used to form URL "shortcuts".
+const shortcutLength = 5
 
-// ShortcutsTable is a table that relies on the rule "shortcuts" to quickly
-// find matching rules. Here's how it works:
+// shortcut is a single shortcut.
+type shortcut string
+
+// shortcutInfo contains the data for a shortcut, including the count of hits.
+type shortcutInfo struct {
+	indexes []int64
+	count   int64
+}
+
+// ShortcutsTable is a [Table] that relies on the rule shortcuts to quickly find
+// matching rules:
 //
-//  1. We extract from the rule the longest substring without special
-//     characters from, this string is called a "shortcut".
-//  2. We take a part of it of length "shortcutLength" and put it to the
-//     internal hashmap.
-//  3. When we match a request, we take all substrings of length
-//     "shortcutsLength" from it and check if there're any rules in the
-//     hashmap.
+//  1. From the rule, it extracts the longest substring without special
+//     characters; this string is the shortcut.
+//  2. It uses a sliding window of [shortcutLength] and puts it into its map.
+//  3. When it matches a request, it takes all substrings of length
+//     [shortcutsLength] from it and checks if there're any rules in the map.
 //
-// Note that only the rules with a shortcut are eligible for this table.
+// NOTE: only the rules with a shortcut are eligible for this table.
 type ShortcutsTable struct {
 	// Storage for the network filtering rules.
 	ruleStorage *filterlist.RuleStorage
 
-	// Map where the key is the hash of the shortcut and value is a list
-	// of rules' indexes.
-	shortcutsLookupTable map[uint32][]int64
+	// shortcutsPool contains slices of shortcuts for reuse..
+	shortcutsPool *syncutil.Pool[[]shortcut]
 
-	// Histogram helps us choose the best shortcut for the shortcuts
-	// lookup table.
-	shortcutsHistogram map[uint32]int
+	// shortcuts is the index of a shortcut to its data.
+	shortcuts map[shortcut]*shortcutInfo
+}
+
+// shortcutsInARuleEst is the estimate for the number of shortcuts in a rule
+// based on an analysis of the AdGuard DNS filtering-rule list.
+const shortcutsInARuleEst = 16
+
+// NewShortcutsTable creates a new instance of *ShortcutsTable.
+func NewShortcutsTable(rs *filterlist.RuleStorage) (s *ShortcutsTable) {
+	return &ShortcutsTable{
+		ruleStorage:   rs,
+		shortcuts:     map[shortcut]*shortcutInfo{},
+		shortcutsPool: syncutil.NewSlicePool[shortcut](shortcutsInARuleEst),
+	}
 }
 
 // type check
 var _ Table = (*ShortcutsTable)(nil)
 
-// NewShortcutsTable creates a new instance of the ShortcutsTable.
-func NewShortcutsTable(rs *filterlist.RuleStorage) (s *ShortcutsTable) {
-	return &ShortcutsTable{
-		ruleStorage:          rs,
-		shortcutsLookupTable: map[uint32][]int64{},
-		shortcutsHistogram:   map[uint32]int{},
-	}
-}
+// Add implements the [Table] interface for *ShortcutsTable.
+func (s *ShortcutsTable) Add(f *rules.NetworkRule, storageIdx int64) (ok bool) {
+	shortcutsPtr := s.shortcutsPool.Get()
+	defer s.shortcutsPool.Put(shortcutsPtr)
 
-// TryAdd implements the LookupTable interface for *ShortcutsTable.
-func (s *ShortcutsTable) TryAdd(f *rules.NetworkRule, storageIdx int64) (ok bool) {
-	shortcuts := getRuleShortcuts(f)
-	if len(shortcuts) == 0 {
+	*shortcutsPtr = appendRuleShortcuts((*shortcutsPtr)[:0], f)
+	if len(*shortcutsPtr) == 0 {
 		return false
 	}
 
-	// Find the applicable shortcut (the least used)
-	var shortcutHash uint32
-	minCount := math.MaxInt32
-	for _, shortcutToCheck := range shortcuts {
-		hash := fasthash.String(shortcutToCheck)
-		count, found := s.shortcutsHistogram[hash]
-		if !found {
-			count = 0
+	var minSC shortcut
+	var minSCInfo *shortcutInfo
+	minCount := int64(math.MaxInt64)
+	for _, sc := range *shortcutsPtr {
+		scInfo := s.shortcuts[sc]
+
+		if scInfo == nil {
+			minSC = sc
+			minSCInfo = &shortcutInfo{}
+
+			break
 		}
-		if count < minCount {
-			minCount = count
-			shortcutHash = hash
+
+		if scInfo.count < minCount {
+			minCount = scInfo.count
+			minSC = sc
+			minSCInfo = scInfo
 		}
 	}
 
-	// Increment the histogram
-	s.shortcutsHistogram[shortcutHash] = minCount + 1
-
-	// Add the rule to the lookup table
-	rulesIndexes := s.shortcutsLookupTable[shortcutHash]
-	rulesIndexes = append(rulesIndexes, storageIdx)
-	s.shortcutsLookupTable[shortcutHash] = rulesIndexes
+	s.shortcuts[minSC] = minSCInfo
+	minSCInfo.count++
+	minSCInfo.indexes = append(minSCInfo.indexes, storageIdx)
 
 	return true
 }
 
-// MatchAll implements the LookupTable interface for *ShortcutsTable.
-func (s *ShortcutsTable) MatchAll(r *rules.Request) (result []*rules.NetworkRule) {
-	reqURL := r.URLLowerCase
-	urlLen := len(reqURL)
-	if urlLen < shortcutLength {
-		return nil
+// AppendMatching implements the [Table] interface for *ShortcutsTable.
+func (s *ShortcutsTable) AppendMatching(
+	matching []*rules.NetworkRule,
+	r *rules.Request,
+) (res []*rules.NetworkRule) {
+	res = matching
+
+	l := len(r.URLLowerCase)
+	if l < shortcutLength {
+		return res
 	}
 
-	for end := 4; end < urlLen; end++ {
-		start := end - 4
-
-		// Manually unroll [fasthash.String] to help the compiler eliminate
-		// bounds checks.
-		hash := uint32(5381)
-		hash = (hash * 33) ^ uint32(reqURL[start])
-		hash = (hash * 33) ^ uint32(reqURL[start+1])
-		hash = (hash * 33) ^ uint32(reqURL[start+2])
-		hash = (hash * 33) ^ uint32(reqURL[start+3])
-		hash = (hash * 33) ^ uint32(reqURL[start+4])
-
-		// The shortcutsLookupTable contains the shortcuts of rules of
-		// fixed length and rules itself.  Go through all the substrings
-		// of passed URL having such length to find matching rules.
-		matchingRules, ok := s.shortcutsLookupTable[hash]
-		if !ok {
+	for i := range l - shortcutLength {
+		sc := shortcut(r.URLLowerCase[i : i+shortcutLength])
+		scInfo := s.shortcuts[sc]
+		if scInfo == nil {
 			continue
 		}
 
-		for _, ruleIdx := range matchingRules {
-			rule := s.ruleStorage.RetrieveNetworkRule(ruleIdx)
+		for _, idx := range scInfo.indexes {
+			rule := s.ruleStorage.RetrieveNetworkRule(idx)
 
-			// Make sure that the same rule isn't returned twice.
-			// This happens when the URL has a repeating pattern.
-			// The check is performed rarely and on rather short
-			// slices, so it shouldn't cause any performance issues.
-			if rule == nil || ruleIn(rule, result) || !rule.Match(r) {
+			// Make sure that the same rule isn't returned twice.  This happens
+			// when the URL has a repeating pattern.  The check is performed
+			// rarely and on rather short slices, so it shouldn't cause any
+			// performance issues.
+			//
+			// TODO(a.garipov):  Consider using a pooled set.
+			if rule == nil || slices.Contains(res, rule) || !rule.Match(r) {
 				continue
 			}
 
-			result = append(result, rule)
+			res = append(res, rule)
 		}
 	}
 
-	return result
+	return res
 }
 
-// getRuleShortcuts returns a list of shortcuts that can be used for the lookup table
-func getRuleShortcuts(f *rules.NetworkRule) []string {
-	if len(f.Shortcut) < shortcutLength {
+// appendRuleShortcuts appends shortcuts to scs.  If r is not eligible, res is
+// nil.
+func appendRuleShortcuts(scs []shortcut, r *rules.NetworkRule) (res []shortcut) {
+	if len(r.Shortcut) < shortcutLength {
 		return nil
 	}
 
-	if isAnyURLShortcut(f) {
+	if isAnyURLShortcut(r) {
 		return nil
 	}
 
-	var shortcuts []string
-	for i := 0; i <= len(f.Shortcut)-shortcutLength; i++ {
-		shortcut := f.Shortcut[i : i+shortcutLength]
-		shortcuts = append(shortcuts, shortcut)
+	res = scs
+	for i := range len(r.Shortcut) - shortcutLength {
+		res = append(res, shortcut(r.Shortcut[i:i+shortcutLength]))
 	}
 
-	return shortcuts
+	return res
 }
 
-// isAnyURLShortcut checks if the rule potentially matches too many URLs.
-// We'd better use another type of lookup table for this kind of rules.
-func isAnyURLShortcut(f *rules.NetworkRule) bool {
-	switch shLen := len(f.Shortcut); {
+// isAnyURLShortcut checks if the rule potentially matches too many URLs.  It is
+// better use another type of lookup table for these kinds of rules.
+//
+// TODO(a.garipov):  Inspect and optimize.
+func isAnyURLShortcut(r *rules.NetworkRule) bool {
+	switch scLen := len(r.Shortcut); {
 	case
-		shLen < len("ws://")+1 && strings.HasPrefix(f.Shortcut, "ws:"),
-		shLen < len("wss://")+1 && strings.HasPrefix(f.Shortcut, "wss:"),
-		shLen < len("|wss://")+1 && strings.HasPrefix(f.Shortcut, "|ws"),
-		shLen < len("https://")+1 && strings.HasPrefix(f.Shortcut, "http"),
-		shLen < len("|https://")+1 && strings.HasPrefix(f.Shortcut, "|http"):
+		scLen < len("ws://")+1 && strings.HasPrefix(r.Shortcut, "ws:"),
+		scLen < len("wss://")+1 && strings.HasPrefix(r.Shortcut, "wss:"),
+		scLen < len("|wss://")+1 && strings.HasPrefix(r.Shortcut, "|ws"),
+		scLen < len("https://")+1 && strings.HasPrefix(r.Shortcut, "http"),
+		scLen < len("|https://")+1 && strings.HasPrefix(r.Shortcut, "|http"):
 		return true
 	default:
 		return false
 	}
-}
-
-// ruleIn checks if the particular rule instance is contained by the slice of
-// pointers.
-func ruleIn(rule *rules.NetworkRule, rs []*rules.NetworkRule) (ok bool) {
-	for _, r := range rs {
-		if r == rule {
-			return true
-		}
-	}
-
-	return false
 }

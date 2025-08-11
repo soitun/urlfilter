@@ -4,8 +4,8 @@ import (
 	"github.com/AdguardTeam/urlfilter/rules"
 )
 
-// SeqScanTable is basically just a list of network rules that are scanned
-// sequentially.  Here we put the rules that are not eligible for other tables.
+// SeqScanTable is a slice of network rules that are scanned sequentially.  Use
+// this for the rules that are not eligible for other tables.
 type SeqScanTable struct {
 	rules []*rules.NetworkRule
 }
@@ -13,27 +13,36 @@ type SeqScanTable struct {
 // type check
 var _ Table = (*SeqScanTable)(nil)
 
-// TryAdd implements the LookupTable interface for *SeqScanTable.
-func (s *SeqScanTable) TryAdd(f *rules.NetworkRule, _ int64) (ok bool) {
-	if !containsRule(s.rules, f) {
-		s.rules = append(s.rules, f)
-		return true
+// Add implements the [Table] interface for *SeqScanTable.
+func (s *SeqScanTable) Add(f *rules.NetworkRule, _ int64) (ok bool) {
+	if containsRule(s.rules, f) {
+		return false
 	}
-	return false
+
+	s.rules = append(s.rules, f)
+
+	return true
 }
 
-// MatchAll implements the LookupTable interface for *SeqScanTable.
-func (s *SeqScanTable) MatchAll(r *rules.Request) (result []*rules.NetworkRule) {
+// AppendMatching implements the [Table] interface for *SeqScanTable.
+func (s *SeqScanTable) AppendMatching(
+	matching []*rules.NetworkRule,
+	r *rules.Request,
+) (res []*rules.NetworkRule) {
+	res = matching
 	for _, rule := range s.rules {
 		if rule.Match(r) {
-			result = append(result, rule)
+			res = append(res, rule)
 		}
 	}
-	return result
+
+	return res
 }
 
 // containsRule is a helper function that checks if the specified rule is
 // already in the array.
+//
+// TODO(a.garipov):  Consider replacing with a set lookup.
 func containsRule(rules []*rules.NetworkRule, r *rules.NetworkRule) (ok bool) {
 	if rules == nil {
 		return false

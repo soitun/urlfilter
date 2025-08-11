@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSeqScanTable_TryAdd(t *testing.T) {
+func TestSeqScanTable_Add(t *testing.T) {
 	t.Parallel()
 
 	tbl := &lookup.SeqScanTable{}
@@ -24,7 +24,7 @@ func TestSeqScanTable_TryAdd(t *testing.T) {
 	}))
 }
 
-func TestSeqScanTable_MatchAll(t *testing.T) {
+func TestSeqScanTable_AppendMatching(t *testing.T) {
 	t.Parallel()
 
 	s := newStorage(t, testRuleTextAll)
@@ -55,18 +55,18 @@ func TestSeqScanTable_MatchAll(t *testing.T) {
 	}
 }
 
-func BenchmarkSeqScanTable_MatchAll(b *testing.B) {
+func BenchmarkSeqScanTable_AppendMatching(b *testing.B) {
 	s := newStorage(b, testRuleTextAll)
 	tbl := &lookup.SeqScanTable{}
 	loadTable(b, tbl, s)
 
 	r := rules.NewRequest(testURLStrWithDomain, testURLStrWithDomain, rules.TypeOther)
 
-	var gotRules []*rules.NetworkRule
+	gotRules := make([]*rules.NetworkRule, 0, 1)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		gotRules = tbl.MatchAll(r)
+		gotRules = tbl.AppendMatching(gotRules[:0], r)
 	}
 
 	require.Len(b, gotRules, 1)
@@ -76,21 +76,21 @@ func BenchmarkSeqScanTable_MatchAll(b *testing.B) {
 	//	goarch: amd64
 	//	pkg: github.com/AdguardTeam/urlfilter/internal/lookup
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
-	//	BenchmarkSeqScanTable_MatchAll-16     	37494498	       962.1 ns/op	       8 B/op	       1 allocs/op
+	//	BenchmarkSeqScanTable_AppendMatching-16     	13848735	       850.8 ns/op	       0 B/op	       0 allocs/op
 }
 
-func BenchmarkSeqScanTable_MatchAll_baseFilter(b *testing.B) {
+func BenchmarkSeqScanTable_AppendMatching_baseFilter(b *testing.B) {
 	s := newStorage(b, string(baseFilterData))
 	tbl := &lookup.SeqScanTable{}
 	loadTable(b, tbl, s)
 
 	r := rules.NewRequest(testURLStrBaseFilterDomain, testURLStrBaseFilterDomain, rules.TypeOther)
 
-	var gotRules []*rules.NetworkRule
+	gotRules := make([]*rules.NetworkRule, 0, 1)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		gotRules = tbl.MatchAll(r)
+		gotRules = tbl.AppendMatching(gotRules[:0], r)
 	}
 
 	matched := false
@@ -105,5 +105,5 @@ func BenchmarkSeqScanTable_MatchAll_baseFilter(b *testing.B) {
 	//	goarch: amd64
 	//	pkg: github.com/AdguardTeam/urlfilter/internal/lookup
 	//	cpu: AMD Ryzen 7 PRO 4750U with Radeon Graphics
-	//	BenchmarkSeqScanTable_MatchAll_baseFilter-16     	     345	   3409787 ns/op	     993 B/op	       7 allocs/op
+	//	BenchmarkSeqScanTable_AppendMatching_baseFilter-16     	    4058	   2928125 ns/op	      79 B/op	       0 allocs/op
 }
