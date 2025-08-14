@@ -1,28 +1,33 @@
-package filterlist
+package filterlist_test
 
 import (
 	"testing"
 
+	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/urlfilter/filterlist"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestRuleStorage2(t *testing.T) {
-	list1 := &StringRuleList{
+func TestRuleStorage(t *testing.T) {
+	t.Parallel()
+
+	list1 := &filterlist.StringRuleList{
 		ID:             1,
 		RulesText:      "||example.org\n! test\n##banner",
 		IgnoreCosmetic: false,
 	}
-	list2 := &StringRuleList{
+	list2 := &filterlist.StringRuleList{
 		ID:             2,
 		RulesText:      "||example.com\n! test\n##advert",
 		IgnoreCosmetic: false,
 	}
 
-	// Create storage from two lists
-	storage, err := NewRuleStorage([]RuleList{list1, list2})
-	assert.Nil(t, err)
+	// Create storage from two lists.
+	storage, err := filterlist.NewRuleStorage([]filterlist.Interface{list1, list2})
+	require.NoError(t, err)
 
-	// Create a scanner instance
+	// Create a scanner instance.
 	scanner := storage.NewRuleStorageScanner()
 	assert.NotNil(t, scanner)
 
@@ -37,7 +42,7 @@ func TestRuleStorage2(t *testing.T) {
 	assert.Equal(t, 1, f.GetFilterListID())
 	assert.Equal(t, "0x0000000100000000", int642hex(idx))
 
-	// Rule 2 from the list 1
+	// Rule 2 from the list 1.
 	assert.True(t, scanner.Scan())
 	f, idx = scanner.Rule()
 
@@ -46,7 +51,7 @@ func TestRuleStorage2(t *testing.T) {
 	assert.Equal(t, 1, f.GetFilterListID())
 	assert.Equal(t, "0x0000000100000015", int642hex(idx))
 
-	// Rule 1 from the list 2
+	// Rule 1 from the list 2.
 	assert.True(t, scanner.Scan())
 	f, idx = scanner.Rule()
 
@@ -55,7 +60,7 @@ func TestRuleStorage2(t *testing.T) {
 	assert.Equal(t, 2, f.GetFilterListID())
 	assert.Equal(t, "0x0000000200000000", int642hex(idx))
 
-	// Rule 2 from the list 2
+	// Rule 2 from the list 2.
 	assert.True(t, scanner.Scan())
 	f, idx = scanner.Rule()
 
@@ -64,43 +69,45 @@ func TestRuleStorage2(t *testing.T) {
 	assert.Equal(t, 2, f.GetFilterListID())
 	assert.Equal(t, "0x0000000200000015", int642hex(idx))
 
-	// Now check that there's nothing to read
+	// Now check that there's nothing to read.
 	assert.False(t, scanner.Scan())
 
-	// Check that nothing breaks if we read a finished scanner
+	// Check that nothing breaks if we read a finished scanner.
 	assert.False(t, scanner.Scan())
 
 	// Time to retrieve!
 
-	// Rule 1 from the list 1
+	// Rule 1 from the list 1.
 	f, err = storage.RetrieveRule(0x0000000100000000)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "||example.org", f.Text())
 
-	// Rule 2 from the list 1
+	// Rule 2 from the list 1.
 	f, err = storage.RetrieveRule(0x0000000100000015)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "##banner", f.Text())
 
-	// Rule 1 from the list 2
+	// Rule 1 from the list 2.
 	f, err = storage.RetrieveRule(0x0000000200000000)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "||example.com", f.Text())
 
-	// Rule 2 from the list 2
+	// Rule 2 from the list 2.
 	f, err = storage.RetrieveRule(0x0000000200000015)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "##advert", f.Text())
 }
 
-func TestRuleStorage2InvalidLists(t *testing.T) {
-	_, err := NewRuleStorage([]RuleList{
-		&StringRuleList{ID: 1, RulesText: ""},
-		&StringRuleList{ID: 1, RulesText: ""},
+func TestRuleStorage_invalid(t *testing.T) {
+	t.Parallel()
+
+	_, err := filterlist.NewRuleStorage([]filterlist.Interface{
+		&filterlist.StringRuleList{ID: filterListID, RulesText: ""},
+		&filterlist.StringRuleList{ID: filterListID, RulesText: ""},
 	})
-	assert.NotNil(t, err)
+	testutil.AssertErrorMsg(t, "at index 1: id: duplicated value: '\\x01'", err)
 }

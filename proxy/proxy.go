@@ -119,7 +119,7 @@ func (s *Server) Close() {
 
 // buildEngine builds a new network engine
 func buildEngine(config Config) (*urlfilter.Engine, error) {
-	var lists []filterlist.RuleList
+	var lists []filterlist.Interface
 
 	for filterID, path := range config.FiltersPaths {
 		list, err := filterlist.NewFileRuleList(filterID, path, false)

@@ -1,26 +1,29 @@
-package filterlist
+package filterlist_test
 
 import (
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/AdguardTeam/urlfilter/filterlist"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-const hostsPath = testResourcesDir + "/hosts"
+func TestRuleScanner_stringReader(t *testing.T) {
+	t.Parallel()
 
-func TestRuleScannerOfStringReader(t *testing.T) {
-	filterList := "||example.org\n! test\n##banner"
-	r := strings.NewReader(filterList)
-	scanner := NewRuleScanner(r, 1, false)
+	const filterListText = "||example.org\n! test\n##banner"
+
+	r := strings.NewReader(filterListText)
+	scanner := filterlist.NewRuleScanner(r, filterListID, false)
 
 	assert.True(t, scanner.Scan())
 	f, idx := scanner.Rule()
 
 	assert.NotNil(t, f)
 	assert.Equal(t, "||example.org", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 	assert.Equal(t, 0, idx)
 
 	assert.True(t, scanner.Scan())
@@ -28,29 +31,29 @@ func TestRuleScannerOfStringReader(t *testing.T) {
 
 	assert.NotNil(t, f)
 	assert.Equal(t, "##banner", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 	assert.Equal(t, 21, idx)
 
 	assert.False(t, scanner.Scan())
 	assert.False(t, scanner.Scan())
 }
 
-func TestRuleScannerOfFileReader(t *testing.T) {
-	file, err := os.Open(hostsPath)
-	if err != nil {
-		t.Fatalf("cannot open hosts file: %s", err)
-	}
+func TestRuleScanner_fileReader(t *testing.T) {
+	t.Parallel()
 
-	// 55997 valid rules in the hosts file
-	scanner := NewRuleScanner(file, 1, true)
+	file, err := os.Open(hostsPath)
+	require.NoError(t, err)
+
+	scanner := filterlist.NewRuleScanner(file, filterListID, true)
 	rulesCount := 0
 	for scanner.Scan() {
 		f, idx := scanner.Rule()
 		assert.NotNil(t, f)
-		assert.True(t, idx > 0)
+		assert.Positive(t, idx)
+
 		rulesCount++
 	}
 
-	assert.Equal(t, 55997, rulesCount)
+	assert.Equal(t, hostsRulesCount, rulesCount)
 	assert.False(t, scanner.Scan())
 }

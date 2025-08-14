@@ -64,7 +64,7 @@ func FuzzNewEngine(f *testing.F) {
 func newTestEngine(tb testing.TB, rulesText string) (engine *urlfilter.Engine) {
 	tb.Helper()
 
-	lists := []filterlist.RuleList{
+	lists := []filterlist.Interface{
 		&filterlist.StringRuleList{
 			ID:             1,
 			RulesText:      rulesText,

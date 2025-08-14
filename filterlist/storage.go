@@ -10,9 +10,9 @@ import (
 	"github.com/AdguardTeam/urlfilter/rules"
 )
 
-// RuleStorage is an abstraction that combines several rule lists It can be
+// RuleStorage is an abstraction that combines several rule lists.  It can be
 // scanned using a [RuleStorageScanner], and also it allows retrieving rules by
-// its index
+// its index.
 //
 // The idea is to keep rules in a serialized format (even original format in the
 // case of [FileRuleList]) and create them in a lazy manner only when we really
@@ -33,25 +33,21 @@ type RuleStorage struct {
 	cache map[int64]rules.Rule
 
 	// listsMap is a map with rule lists.  map key is the list ID.
-	listsMap map[int]RuleList
+	listsMap map[int]Interface
 
-	// lists is an array of rules lists which can be accessed
-	// using this RuleStorage
-	lists []RuleList
+	// lists is an array of rules lists which can be accessed using this
+	// RuleStorage.
+	lists []Interface
 }
 
-// NewRuleStorage creates a new instance of the RuleStorage and validates the
+// NewRuleStorage creates a new instance of the [*RuleStorage] and validates the
 // list of rules specified.
-func NewRuleStorage(lists []RuleList) (s *RuleStorage, err error) {
-	if lists == nil {
-		lists = make([]RuleList, 0)
-	}
-
-	listsMap := make(map[int]RuleList, len(lists))
+func NewRuleStorage(lists []Interface) (s *RuleStorage, err error) {
+	listsMap := make(map[int]Interface, len(lists))
 	for i, list := range lists {
 		id := list.GetID()
 		if _, ok := listsMap[id]; ok {
-			return nil, fmt.Errorf("list at index %d: duplicate list id: %d", i, id)
+			return nil, fmt.Errorf("at index %d: id: %w: %q", i, errors.ErrDuplicated, id)
 		}
 
 		listsMap[id] = list

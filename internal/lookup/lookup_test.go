@@ -73,7 +73,7 @@ func newStorage(tb testing.TB, text string) (s *filterlist.RuleStorage) {
 		RulesText: text,
 	}
 
-	s, err := filterlist.NewRuleStorage([]filterlist.RuleList{l})
+	s, err := filterlist.NewRuleStorage([]filterlist.Interface{l})
 	require.NoError(tb, err)
 
 	return s

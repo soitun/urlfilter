@@ -209,7 +209,7 @@ func FuzzNetworkEngine_Match(f *testing.F) {
 
 	rulesText := "||example.test^"
 
-	lists := []filterlist.RuleList{
+	lists := []filterlist.Interface{
 		&filterlist.StringRuleList{
 			ID:             1,
 			RulesText:      rulesText,
@@ -271,7 +271,7 @@ func newTestNetworkEngine(tb testing.TB) (engine *NetworkEngine) {
 	filterBytes, err := os.ReadFile(filterPath)
 	require.NoError(tb, err)
 
-	lists := []filterlist.RuleList{
+	lists := []filterlist.Interface{
 		&filterlist.StringRuleList{
 			ID:             1,
 			RulesText:      string(filterBytes),
@@ -291,7 +291,7 @@ func newTestRuleStorage(t *testing.T, listID int, rulesText string) *filterlist.
 		RulesText:      rulesText,
 		IgnoreCosmetic: false,
 	}
-	ruleStorage, err := filterlist.NewRuleStorage([]filterlist.RuleList{list})
+	ruleStorage, err := filterlist.NewRuleStorage([]filterlist.Interface{list})
 	if err != nil {
 		t.Fatalf("cannot initialize rule storage: %s", err)
 	}

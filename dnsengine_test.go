@@ -658,7 +658,7 @@ func FuzzDNSEngine_Match(f *testing.F) {
 ::1 v4and6.com
 `
 
-	lists := []filterlist.RuleList{
+	lists := []filterlist.Interface{
 		&filterlist.StringRuleList{
 			ID:             1,
 			RulesText:      rulesText,
@@ -706,7 +706,7 @@ func newRuleStorage(tb testing.TB) (ruleStorage *filterlist.RuleStorage) {
 	filterRuleList := ruleListFromPath(tb, networkFilterPath, 1)
 	hostsRuleList := ruleListFromPath(tb, hostsPath, 2)
 
-	ruleLists := []filterlist.RuleList{
+	ruleLists := []filterlist.Interface{
 		filterRuleList,
 		hostsRuleList,
 	}

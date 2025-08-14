@@ -8,27 +8,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/urlfilter/rules"
 )
 
-// On Linux the size of the data block is usually 4KB
-// So it makes sense to use 4KB.
-const readerBufferSize = 4 * 1024
-
-// ErrRuleRetrieval signals that the rule cannot be retrieved by RuleList
-// by the the specified index
-var ErrRuleRetrieval errors.Error = "cannot retrieve the rule"
-
-// RuleList represents a set of filtering rules
-type RuleList interface {
-	GetID() int                                   // GetID returns the rule list identifier
-	NewScanner() *RuleScanner                     // Creates a new scanner that reads the list contents
-	RetrieveRule(ruleIdx int) (rules.Rule, error) // Retrieves a rule by its index
-	io.Closer                                     // Closes the rules list
-}
-
-// StringRuleList represents a string-based rule list
+// StringRuleList represents a string-based rule list.
+//
+// TODO(d.kolyshev):  Improve code and move to string.go.
 type StringRuleList struct {
 	// RulesText is a string with filtering rules (one per line).
 	RulesText string
@@ -39,6 +24,9 @@ type StringRuleList struct {
 	// IgnoreCosmetic tells whether to ignore cosmetic rules or not.
 	IgnoreCosmetic bool
 }
+
+// type check
+var _ Interface = (*StringRuleList)(nil)
 
 // GetID returns the rule list identifier
 func (l *StringRuleList) GetID() int {
@@ -79,7 +67,9 @@ func (l *StringRuleList) Close() error {
 	return nil
 }
 
-// FileRuleList represents a file-based rule list
+// FileRuleList represents a file-based rule list.
+//
+// TODO(d.kolyshev):  Improve code and move to file.go.
 type FileRuleList struct {
 	// File with rules.
 	File *os.File
@@ -113,6 +103,9 @@ func NewFileRuleList(id int, path string, ignoreCosmetic bool) (*FileRuleList, e
 	l.File = f
 	return l, nil
 }
+
+// type check
+var _ Interface = (*FileRuleList)(nil)
 
 // GetID returns the rule list identifier
 func (l *FileRuleList) GetID() int {

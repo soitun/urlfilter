@@ -105,7 +105,7 @@ func newTestCosmeticEngine(tb testing.TB) (eng *urlfilter.CosmeticEngine) {
 example.org##banner_specific
 example.org#@#banner_generic_disabled`
 
-	lists := []filterlist.RuleList{
+	lists := []filterlist.Interface{
 		&filterlist.StringRuleList{
 			ID:             1,
 			RulesText:      rulesText,

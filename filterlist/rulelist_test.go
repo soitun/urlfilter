@@ -1,18 +1,22 @@
-package filterlist
+package filterlist_test
 
 import (
 	"path/filepath"
 	"testing"
 
 	"github.com/AdguardTeam/golibs/testutil"
+	"github.com/AdguardTeam/urlfilter/filterlist"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-const testResourcesDir = "../testdata"
+// TODO(d.kolyshev):  Improve tests.
 
 func TestStringRuleListScanner(t *testing.T) {
-	ruleList := &StringRuleList{
-		ID:             1,
+	t.Parallel()
+
+	ruleList := &filterlist.StringRuleList{
+		ID:             filterListID,
 		IgnoreCosmetic: false,
 		RulesText:      "||example.org\n! test\n##banner",
 	}
@@ -27,7 +31,7 @@ func TestStringRuleListScanner(t *testing.T) {
 
 	assert.NotNil(t, f)
 	assert.Equal(t, "||example.org", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 	assert.Equal(t, 0, idx)
 
 	assert.True(t, scanner.Scan())
@@ -35,7 +39,7 @@ func TestStringRuleListScanner(t *testing.T) {
 
 	assert.NotNil(t, f)
 	assert.Equal(t, "##banner", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 	assert.Equal(t, 21, idx)
 
 	// Finish scanning
@@ -45,22 +49,24 @@ func TestStringRuleListScanner(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "||example.org", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 
 	f, err = ruleList.RetrieveRule(21)
 	assert.Nil(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "##banner", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 }
 
 func TestFileRuleListScanner(t *testing.T) {
-	ruleList, err := NewFileRuleList(1, filepath.Join(testResourcesDir, "test_file_rule_list.txt"), false)
-	if err != nil {
-		t.Fatalf("couldn't create rule list: %s", err)
-	}
+	t.Parallel()
+
+	testFileRuleList := filepath.Join(testResourcesDir, "test_file_rule_list.txt")
+	ruleList, err := filterlist.NewFileRuleList(filterListID, testFileRuleList, false)
+	require.NoError(t, err)
 	testutil.CleanupAndRequireSuccess(t, ruleList.Close)
-	assert.Equal(t, 1, ruleList.GetID())
+
+	assert.Equal(t, filterListID, ruleList.GetID())
 
 	scanner := ruleList.NewScanner()
 
@@ -69,7 +75,7 @@ func TestFileRuleListScanner(t *testing.T) {
 
 	assert.NotNil(t, f)
 	assert.Equal(t, "||example.org", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 	assert.Equal(t, 0, idx)
 
 	assert.True(t, scanner.Scan())
@@ -77,7 +83,7 @@ func TestFileRuleListScanner(t *testing.T) {
 
 	assert.NotNil(t, f)
 	assert.Equal(t, "##banner", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 	assert.Equal(t, 21, idx)
 
 	// Finish scanning
@@ -87,11 +93,11 @@ func TestFileRuleListScanner(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "||example.org", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 
 	f, err = ruleList.RetrieveRule(21)
 	assert.Nil(t, err)
 	assert.NotNil(t, f)
 	assert.Equal(t, "##banner", f.Text())
-	assert.Equal(t, 1, f.GetFilterListID())
+	assert.Equal(t, filterListID, f.GetFilterListID())
 }
