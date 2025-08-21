@@ -69,9 +69,10 @@ var baseFilterData = errors.Must(os.ReadFile("../../testdata/adguard_base_filter
 func newStorage(tb testing.TB, text string) (s *filterlist.RuleStorage) {
 	tb.Helper()
 
-	l := &filterlist.StringRuleList{
+	l := filterlist.NewString(&filterlist.StringConfig{
 		RulesText: text,
-	}
+		ID:        1,
+	})
 
 	s, err := filterlist.NewRuleStorage([]filterlist.Interface{l})
 	require.NoError(tb, err)

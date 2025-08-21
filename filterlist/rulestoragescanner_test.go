@@ -12,7 +12,7 @@ func TestRuleStorageScanner(t *testing.T) {
 	t.Parallel()
 
 	const (
-		filterList1 = "||example.org\n! test\n##banner"
+		filterList1 = testRuleTextAll
 		filterList2 = "||example.com\n! test\n##advert"
 	)
 
@@ -32,7 +32,7 @@ func TestRuleStorageScanner(t *testing.T) {
 	f, idx := storageScanner.Rule()
 
 	assert.NotNil(t, f)
-	assert.Equal(t, "||example.org", f.Text())
+	assert.Equal(t, testRule, f.Text())
 	assert.Equal(t, 1, f.GetFilterListID())
 	assert.Equal(t, "0x0000000100000000", int642hex(idx))
 
@@ -41,9 +41,9 @@ func TestRuleStorageScanner(t *testing.T) {
 	f, idx = storageScanner.Rule()
 
 	assert.NotNil(t, f)
-	assert.Equal(t, "##banner", f.Text())
+	assert.Equal(t, testRuleCosmetic, f.Text())
 	assert.Equal(t, 1, f.GetFilterListID())
-	assert.Equal(t, "0x0000000100000015", int642hex(idx))
+	assert.Equal(t, "0x0000000100000019", int642hex(idx))
 
 	// Rule 1 from the list 2.
 	assert.True(t, storageScanner.Scan())

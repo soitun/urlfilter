@@ -12,16 +12,15 @@ import (
 func TestRuleStorage(t *testing.T) {
 	t.Parallel()
 
-	list1 := &filterlist.StringRuleList{
-		ID:             1,
-		RulesText:      "||example.org\n! test\n##banner",
-		IgnoreCosmetic: false,
-	}
-	list2 := &filterlist.StringRuleList{
-		ID:             2,
-		RulesText:      "||example.com\n! test\n##advert",
-		IgnoreCosmetic: false,
-	}
+	list1 := filterlist.NewString(&filterlist.StringConfig{
+		RulesText: testRuleTextAll,
+		ID:        1,
+	})
+
+	list2 := filterlist.NewString(&filterlist.StringConfig{
+		RulesText: "||example.com\n! test\n##advert",
+		ID:        2,
+	})
 
 	// Create storage from two lists.
 	storage, err := filterlist.NewRuleStorage([]filterlist.Interface{list1, list2})
@@ -38,7 +37,7 @@ func TestRuleStorage(t *testing.T) {
 	f, idx := scanner.Rule()
 
 	assert.NotNil(t, f)
-	assert.Equal(t, "||example.org", f.Text())
+	assert.Equal(t, testRule, f.Text())
 	assert.Equal(t, 1, f.GetFilterListID())
 	assert.Equal(t, "0x0000000100000000", int642hex(idx))
 
@@ -47,9 +46,9 @@ func TestRuleStorage(t *testing.T) {
 	f, idx = scanner.Rule()
 
 	assert.NotNil(t, f)
-	assert.Equal(t, "##banner", f.Text())
+	assert.Equal(t, testRuleCosmetic, f.Text())
 	assert.Equal(t, 1, f.GetFilterListID())
-	assert.Equal(t, "0x0000000100000015", int642hex(idx))
+	assert.Equal(t, "0x0000000100000019", int642hex(idx))
 
 	// Rule 1 from the list 2.
 	assert.True(t, scanner.Scan())
@@ -81,13 +80,13 @@ func TestRuleStorage(t *testing.T) {
 	f, err = storage.RetrieveRule(0x0000000100000000)
 	require.NoError(t, err)
 	assert.NotNil(t, f)
-	assert.Equal(t, "||example.org", f.Text())
+	assert.Equal(t, testRule, f.Text())
 
 	// Rule 2 from the list 1.
-	f, err = storage.RetrieveRule(0x0000000100000015)
+	f, err = storage.RetrieveRule(0x0000000100000019)
 	require.NoError(t, err)
 	assert.NotNil(t, f)
-	assert.Equal(t, "##banner", f.Text())
+	assert.Equal(t, testRuleCosmetic, f.Text())
 
 	// Rule 1 from the list 2.
 	f, err = storage.RetrieveRule(0x0000000200000000)
@@ -105,9 +104,13 @@ func TestRuleStorage(t *testing.T) {
 func TestRuleStorage_invalid(t *testing.T) {
 	t.Parallel()
 
+	conf := &filterlist.StringConfig{
+		ID:        filterListID,
+		RulesText: "",
+	}
 	_, err := filterlist.NewRuleStorage([]filterlist.Interface{
-		&filterlist.StringRuleList{ID: filterListID, RulesText: ""},
-		&filterlist.StringRuleList{ID: filterListID, RulesText: ""},
+		filterlist.NewString(conf),
+		filterlist.NewString(conf),
 	})
 	testutil.AssertErrorMsg(t, "at index 1: id: duplicated value: '\\x01'", err)
 }

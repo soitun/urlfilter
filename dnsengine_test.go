@@ -659,11 +659,10 @@ func FuzzDNSEngine_Match(f *testing.F) {
 `
 
 	lists := []filterlist.Interface{
-		&filterlist.StringRuleList{
-			ID:             1,
-			RulesText:      rulesText,
-			IgnoreCosmetic: false,
-		},
+		filterlist.NewString(&filterlist.StringConfig{
+			RulesText: rulesText,
+			ID:        1,
+		}),
 	}
 
 	ruleStorage, err := filterlist.NewRuleStorage(lists)
@@ -681,17 +680,17 @@ func FuzzDNSEngine_Match(f *testing.F) {
 }
 
 // ruleListFromPath returns a rule list loaded from a file.
-func ruleListFromPath(tb testing.TB, path string, id int) (l *filterlist.StringRuleList) {
+func ruleListFromPath(tb testing.TB, path string, id int) (l *filterlist.Bytes) {
 	tb.Helper()
 
 	rulesText, err := os.ReadFile(path)
 	require.NoError(tb, err)
 
-	return &filterlist.StringRuleList{
+	return filterlist.NewBytes(&filterlist.BytesConfig{
+		RulesText:      rulesText,
 		ID:             id,
-		RulesText:      string(rulesText),
 		IgnoreCosmetic: true,
-	}
+	})
 }
 
 const (

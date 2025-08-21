@@ -13,16 +13,14 @@ import (
 func TestRuleScanner_stringReader(t *testing.T) {
 	t.Parallel()
 
-	const filterListText = "||example.org\n! test\n##banner"
-
-	r := strings.NewReader(filterListText)
+	r := strings.NewReader(testRuleTextAll)
 	scanner := filterlist.NewRuleScanner(r, filterListID, false)
 
 	assert.True(t, scanner.Scan())
 	f, idx := scanner.Rule()
 
 	assert.NotNil(t, f)
-	assert.Equal(t, "||example.org", f.Text())
+	assert.Equal(t, testRule, f.Text())
 	assert.Equal(t, filterListID, f.GetFilterListID())
 	assert.Equal(t, 0, idx)
 
@@ -30,9 +28,9 @@ func TestRuleScanner_stringReader(t *testing.T) {
 	f, idx = scanner.Rule()
 
 	assert.NotNil(t, f)
-	assert.Equal(t, "##banner", f.Text())
+	assert.Equal(t, testRuleCosmetic, f.Text())
 	assert.Equal(t, filterListID, f.GetFilterListID())
-	assert.Equal(t, 21, idx)
+	assert.Equal(t, cosmeticRuleIndex, idx)
 
 	assert.False(t, scanner.Scan())
 	assert.False(t, scanner.Scan())

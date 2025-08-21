@@ -65,11 +65,10 @@ func newTestEngine(tb testing.TB, rulesText string) (engine *urlfilter.Engine) {
 	tb.Helper()
 
 	lists := []filterlist.Interface{
-		&filterlist.StringRuleList{
-			ID:             1,
-			RulesText:      rulesText,
-			IgnoreCosmetic: false,
-		},
+		filterlist.NewString(&filterlist.StringConfig{
+			RulesText: rulesText,
+			ID:        1,
+		}),
 	}
 
 	ruleStorage, err := filterlist.NewRuleStorage(lists)

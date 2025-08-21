@@ -1,9 +1,34 @@
 package filterlist_test
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // filterListID is the testing ID for a filter list.
 const filterListID = 1
+
+// Common domains for tests.
+const testDomain = "test.example"
+
+// Common rules for tests.
+const (
+	testRule         = "||" + testDomain
+	testRuleCosmetic = "##banner"
+	testComment      = "! comment"
+)
+
+// Common text rules for tests.
+const (
+	testRuleText         = testRule + "\n"
+	testRuleTextCosmetic = testRuleCosmetic + "\n"
+	testCommentText      = testComment + "\n"
+
+	testRuleTextAll = testRuleText + testCommentText + testRuleTextCosmetic
+)
+
+// cosmeticRuleIndex is the index of the cosmetic rule in testRuleTextAll.
+var cosmeticRuleIndex = strings.Index(testRuleTextAll, testRuleCosmetic)
 
 const (
 	// testResourcesDir is the path to test resources.

@@ -15,12 +15,11 @@ import (
 // its index.
 //
 // The idea is to keep rules in a serialized format (even original format in the
-// case of [FileRuleList]) and create them in a lazy manner only when we really
-// need them.  When the filtering engine is being initialized, we need to scan
-// the rule lists once in order to fill up the lookup tables.  We use rule
-// indexes as a unique rule identifier instead of the rule itself.  The rule is
-// created (see [RuleStorage.RetrieveRule]) only when there's a chance that it's
-// needed.
+// case of [File]) and create them in a lazy manner only when we really need
+// them.  When the filtering engine is being initialized, we need to scan the
+// rule lists once in order to fill up the lookup tables.  We use rule indexes
+// as a unique rule identifier instead of the rule itself.  The rule is created
+// (see [RuleStorage.RetrieveRule]) only when there's a chance that it's needed.
 //
 // Rule index is an int64 value that actually consists of two int32 values: one
 // is the rule list identifier, and the second is the index of the rule inside

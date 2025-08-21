@@ -122,7 +122,10 @@ func buildEngine(config Config) (*urlfilter.Engine, error) {
 	var lists []filterlist.Interface
 
 	for filterID, path := range config.FiltersPaths {
-		list, err := filterlist.NewFileRuleList(filterID, path, false)
+		list, err := filterlist.NewFile(&filterlist.FileConfig{
+			Path: path,
+			ID:   filterID,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create rule list %d: %s", filterID, err)
 		}
