@@ -155,7 +155,7 @@ func NewRequestForHostname(hostname string) (r *Request) {
 	return r
 }
 
-// FillRequestForHostname fills an instance of request r for matching the
+// FillRequestForHostname fills the given instance of request r for matching the
 // hostname.  It uses "http://" as a protocol for request URL and [TypeDocument]
 // as request type.
 func FillRequestForHostname(r *Request, hostname string) {
@@ -163,6 +163,8 @@ func FillRequestForHostname(r *Request, hostname string) {
 	// Hostname validation should be performed by the function caller.
 	urlStr := "http://" + hostname
 
+	// TODO(d.kolyshev): Make r.URL to be [url.URL], then [url.AppendBinary]
+	// on usages.
 	r.URL = urlStr
 	r.URLLowerCase = urlStr
 	r.Hostname = hostname
